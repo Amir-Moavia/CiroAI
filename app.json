@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "CrisisAI",
+    "slug": "crisisai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.crisisai.app"
+    },
+    "android": {
+      "package": "com.crisisai.app"
+    },
+    "plugins": []
+  }
+}
