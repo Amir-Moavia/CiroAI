@@ -27,6 +27,9 @@ module.exports = {
     plugins: [],
     extra: {
       googleMapsApiKey: mapsApiKey,
+      eas: {
+        projectId: "310c9a22-404c-4dc0-b4da-d88e4ca0f081"
+      }
     },
   },
 };
