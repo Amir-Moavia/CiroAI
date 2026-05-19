@@ -38,7 +38,7 @@ import { useActiveCrisisView } from '../hooks/useActiveCrisisView';
 import { ActiveCrisisBanner } from '../components/ActiveCrisisBanner';
 import { CRISIS_TYPE_LABELS } from '../utils/activeCrisisView';
 import { testGoogleMapsApiKey } from '../services/geocodingService';
-import { getAlternateRoutes } from '../services/routesService';
+import { getAlternateRoutes, testGoogleDirectionsApi } from '../services/routesService';
 import type { MapMarker as CrisisMarker, Severity, CrisisType, RoutePolyline as CrisisRoute } from '../types';
 
 // ── Constants ───────────────────────────────────────────────
@@ -272,27 +272,26 @@ const getRoutesForLocation = (cLat: number, cLng: number) => {
     };
   }
 
-  // DEFAULT fallback — routes relative to crisis point
+  // DEFAULT fallback — beautiful grid-aligned roads matching Pakistani sector layouts
   return {
     blockedRoad: [
-      { latitude: cLat - 0.003, longitude: cLng - 0.005 },
-      { latitude: cLat,         longitude: cLng          },
-      { latitude: cLat + 0.003, longitude: cLng + 0.005 },
+      { latitude: cLat - 0.0015, longitude: cLng },
+      { latitude: cLat + 0.0015, longitude: cLng },
     ],
     route1: [
-      { latitude: cLat - 0.003, longitude: cLng - 0.005 },
-      { latitude: cLat + 0.005, longitude: cLng - 0.003 },
-      { latitude: cLat + 0.006, longitude: cLng + 0.003 },
-      { latitude: cLat + 0.003, longitude: cLng + 0.005 },
+      { latitude: cLat - 0.0025, longitude: cLng },
+      { latitude: cLat - 0.0025, longitude: cLng + 0.003 }, // East detour avenue
+      { latitude: cLat + 0.0025, longitude: cLng + 0.003 }, // North double road
+      { latitude: cLat + 0.0025, longitude: cLng },          // West reconnect
     ],
     route2: [
-      { latitude: cLat - 0.003, longitude: cLng - 0.005 },
-      { latitude: cLat - 0.006, longitude: cLng - 0.002 },
-      { latitude: cLat - 0.005, longitude: cLng + 0.004 },
-      { latitude: cLat + 0.003, longitude: cLng + 0.005 },
+      { latitude: cLat - 0.0025, longitude: cLng },
+      { latitude: cLat - 0.0025, longitude: cLng - 0.003 }, // West detour avenue
+      { latitude: cLat + 0.0025, longitude: cLng - 0.003 }, // North double road
+      { latitude: cLat + 0.0025, longitude: cLng },          // East reconnect
     ],
-    route1Name: 'Via Jinnah Avenue',
-    route2Name: 'Via Kashmir Highway',
+    route1Name: 'Via Sector East Double Road',
+    route2Name: 'Via Sector West Double Road',
   };
 };
 
@@ -349,8 +348,21 @@ export default function MapScreen() {
   const [realRoutes, setRealRoutes] = useState<any>(null);
 
   useEffect(() => {
-    testGoogleMapsApiKey().then((r) => {
-      setMapsStatus(r.ok ? '✓ Geocoding API OK' : `⚠ Geocoding: ${r.message}`);
+    Promise.all([
+      testGoogleMapsApiKey(),
+      testGoogleDirectionsApi()
+    ]).then(([geoRes, dirRes]) => {
+      let msg = '';
+      if (geoRes.ok && dirRes.ok) {
+        msg = '✓ Google Maps APIs active';
+      } else {
+        const geoErr = geoRes.ok ? 'Geocode OK' : `Geocode: ${geoRes.status}`;
+        const dirErr = dirRes.ok ? 'Directions OK' : `Directions: ${dirRes.status}`;
+        msg = `⚠ API Error: [${geoErr}] [${dirErr}]`;
+      }
+      setMapsStatus(msg);
+    }).catch((e) => {
+      setMapsStatus(`⚠ Geocode/Directions Network Error: ${e.message}`);
     });
   }, []);
 
@@ -517,6 +529,27 @@ export default function MapScreen() {
     ? realRoutes.route2 
     : routeData?.route2;
 
+  // Snapped blocked road segment: if we have realRoutes, find the coordinate in route1 closest to the epicenter and slice it
+  const blockedCoords = (() => {
+    if (realRoutes?.route1?.length > 1 && topCrisisCoords) {
+      let closestIdx = 0;
+      let minDistance = Infinity;
+      realRoutes.route1.forEach((coord: any, idx: number) => {
+        const dist = Math.pow(coord.latitude - topCrisisCoords.latitude, 2) + 
+                     Math.pow(coord.longitude - topCrisisCoords.longitude, 2);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestIdx = idx;
+        }
+      });
+      // Extract a 3-point segment around the closest index (approx 100-200m blockage)
+      const start = Math.max(0, closestIdx - 1);
+      const end = Math.min(realRoutes.route1.length, closestIdx + 2);
+      return realRoutes.route1.slice(start, end);
+    }
+    return routeData?.blockedRoad;
+  })();
+
   const r1Name = realRoutes?.route1Name ?? routeData?.route1Name ?? 'Alternate Route 1';
   const r2Name = realRoutes?.route2Name ?? routeData?.route2Name ?? 'Alternate Route 2';
 
@@ -556,15 +589,6 @@ export default function MapScreen() {
               topCrisisCoords &&
               routeData && (
                 <>
-                  {/* Blocked Road — red solid */}
-                  <Polyline
-                    coordinates={routeData.blockedRoad}
-                    strokeColor="#FF2222"
-                    strokeWidth={5}
-                    lineDashPattern={[]}
-                    zIndex={1}
-                  />
-
                   {/* Alternate Route 1 — bright green dashed */}
                   {routeCoords1 && routeCoords1.length > 0 && (
                     <Polyline
@@ -584,6 +608,17 @@ export default function MapScreen() {
                       strokeWidth={4}
                       lineDashPattern={[12, 6]}
                       zIndex={1}
+                    />
+                  )}
+
+                  {/* Blocked Road — red solid (PAINTED LAST TO STAY ON TOP) */}
+                  {blockedCoords && blockedCoords.length > 0 && (
+                    <Polyline
+                      coordinates={blockedCoords}
+                      strokeColor="#FF2222"
+                      strokeWidth={6}
+                      lineDashPattern={[]}
+                      zIndex={10}
                     />
                   )}
 
