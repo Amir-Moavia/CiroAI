@@ -149,9 +149,19 @@ export class AnalysisAgent {
     reasons.push(`Signal strength: ${sigCount} signals → ${signalStrength}/25`);
 
     // Factor 2 — Type criticality (0–30)
-    const baseCrit = TYPE_CRITICALITY[event.detectedType] ?? 20;
+    let detectedType = event.detectedType;
+    if (!detectedType || detectedType === 'unknown' || (detectedType as string) === 'undefined') {
+      const text = event.signals.map((s) => s.text.toLowerCase()).join(' ');
+      if (/\b(power|electricity|outage|bijli|transformer|light)\b/i.test(text)) detectedType = 'power_outage';
+      else if (/\b(flood|water|rain|drainage|selab)\b/i.test(text)) detectedType = 'flood';
+      else if (/\b(accident|blocked|traffic|road|jam)\b/i.test(text)) detectedType = 'road_damage';
+      else if (/\b(fire|dhuan|aag)\b/i.test(text)) detectedType = 'fire';
+      reasons.push(`Fallback classification used: ${detectedType} based on keywords.`);
+    }
+
+    const baseCrit = TYPE_CRITICALITY[detectedType] ?? 20;
     const typeCriticality = Math.round((baseCrit / 100) * 30);
-    reasons.push(`Type criticality: ${event.detectedType} (base ${baseCrit}) → ${typeCriticality}/30`);
+    reasons.push(`Type criticality: ${detectedType} (base ${baseCrit}) → ${typeCriticality}/30`);
 
     // Factor 3 — Population density (0–20)
     const pop = POPULATION_TIERS[area] ?? DEFAULT_POP;
@@ -178,7 +188,7 @@ export class AnalysisAgent {
     }
 
     const rawScore = signalStrength + typeCriticality + populationDensity + timeOfDay + infrastructure;
-    const score = Math.min(100, rawScore);
+    const score = Math.min(100, Math.max(50, rawScore));
     const level = scoreToLevel(score);
 
     reasons.push(`Base score: ${rawScore}. Final: ${score} → ${level.toUpperCase()}`);

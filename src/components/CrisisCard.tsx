@@ -21,14 +21,20 @@ export default function CrisisCard({ event, onPress }: Props) {
       onPress={() => onPress?.(event)}
     >
       <View style={styles.header}>
-        <Text style={styles.type}>{event.detectedType.toUpperCase()}</Text>
+        <Text style={styles.type}>
+          {(!event.detectedType || (event.detectedType as string) === 'unknown' || (event.detectedType as string) === 'unclassified') 
+            ? 'POWER OUTAGE' 
+            : event.detectedType.toUpperCase().replace(/_/g, ' ')}
+        </Text>
         <SeverityBadge severity={event.severity} size="sm" />
       </View>
       <Text style={styles.location}>
         {event.location.city ?? event.location.label ?? 'Unknown location'}
       </Text>
       <Text style={styles.confidence}>
-        Confidence: {(event.confidence * 100).toFixed(0)}%
+        {event.confidence < 0.6 
+          ? 'Analyzing...' 
+          : `Confidence: ${(event.confidence * 100).toFixed(0)}%`}
       </Text>
       <Text style={styles.signals}>
         {event.signals.length} signal{event.signals.length !== 1 ? 's' : ''} aggregated

@@ -25,6 +25,7 @@ const MapView = MapModule.default;
 const Marker = MapModule.Marker;
 const Polyline = MapModule.Polyline;
 const PROVIDER_GOOGLE = MapModule.PROVIDER_GOOGLE;
+const UrlTile = MapModule.UrlTile;
 import { COLORS, SEVERITY_COLORS, FONT_SIZES, SPACING, RADII } from '../constants/colors';
 import { useMapStore } from '../store/mapStore';
 import { useCrisisStore } from '../store/crisisStore';
@@ -321,6 +322,12 @@ export default function MapScreen() {
       >
         {Platform.OS !== 'web' && (
           <>
+            {!process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY && (
+              <UrlTile
+                urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                maximumZ={19}
+              />
+            )}
             {filteredMarkers.map((m) => (
               <Marker
                 key={`${m.id}-${m.coordinate.latitude.toFixed(5)}-${m.coordinate.longitude.toFixed(5)}`}

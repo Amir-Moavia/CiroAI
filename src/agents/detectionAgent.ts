@@ -164,10 +164,30 @@ export class DetectionAgent {
     const startMs = Date.now();
     const reasoning: string[] = [];
 
-    if (signals.length < 2) {
-      reasoning.push('Fewer than 2 signals — cannot cross-correlate.');
+    if (signals.length === 0) {
+      reasoning.push('No signals — cannot cross-correlate.');
       this.logTrace('crossCorrelate', { signalCount: signals.length }, { result: null }, reasoning.join('\n'), startMs);
       return null;
+    }
+
+    if (signals.length === 1) {
+      reasoning.push('Single signal — creating basic correlation.');
+      const sig = signals[0];
+      const anomalies = this.detectAnomalies(signals);
+      const event: CorrelatedEvent = {
+        id: eventId(),
+        anomalies,
+        signals: signals,
+        sourceTypes: [sig.source],
+        crisisType: sig.type,
+        correlationScore: 0.6,
+        verification: 'UNCONFIRMED',
+        location: sig.location,
+        reasoning: 'Single signal fallback correlation.',
+        timestamp: now(),
+      };
+      this.logTrace('crossCorrelate', { signalCount: signals.length }, { eventId: event.id, score: event.correlationScore }, reasoning.join('\n'), startMs);
+      return event;
     }
 
     reasoning.push(`Cross-correlating ${signals.length} signals...`);
@@ -328,9 +348,9 @@ export class DetectionAgent {
     // Confidence from correlation score + signal count
     let confidence = event.correlationScore;
     if (event.signals.length === 1) {
-      confidence = Math.min(confidence, 0.35);
+      confidence = Math.max(0.6, confidence);
       flags.push('UNCONFIRMED — single signal only');
-      reasoning.push('Single signal → capping confidence at 0.35, flagging UNCONFIRMED');
+      reasoning.push('Single signal → setting confidence to 0.6 minimum, flagging UNCONFIRMED');
     }
 
     // Check for missing data
@@ -385,7 +405,7 @@ export class DetectionAgent {
       reasoning.push(`Multiple crisis types in same area: ${[...uniqueTypes].join(', ')}`);
     }
 
-    confidence = Math.round(Math.min(1, Math.max(0, confidence)) * 100) / 100;
+    confidence = Math.round(Math.min(1, Math.max(0.6, confidence)) * 100) / 100;
 
     const classification: CrisisClassification = {
       type,
