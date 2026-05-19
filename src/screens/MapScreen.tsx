@@ -26,6 +26,8 @@ const Marker = MapModule.Marker;
 const Polyline = MapModule.Polyline;
 const PROVIDER_GOOGLE = MapModule.PROVIDER_GOOGLE;
 const UrlTile = MapModule.UrlTile;
+const Callout = MapModule.Callout;
+const Circle = MapModule.Circle;
 import { COLORS, SEVERITY_COLORS, FONT_SIZES, SPACING, RADII } from '../constants/colors';
 import { useMapStore } from '../store/mapStore';
 import { useCrisisStore } from '../store/crisisStore';
@@ -35,7 +37,6 @@ import { ActiveCrisisBanner } from '../components/ActiveCrisisBanner';
 import { CRISIS_TYPE_LABELS } from '../utils/activeCrisisView';
 import { testGoogleMapsApiKey } from '../services/geocodingService';
 import type { MapMarker as CrisisMarker, Severity, CrisisType, RoutePolyline as CrisisRoute } from '../types';
-import { ALL_MOCK_SIGNALS } from '../data/mockSignals';
 
 // ── Constants ───────────────────────────────────────────────
 
@@ -45,8 +46,8 @@ const BOTTOM_SHEET_HEIGHT = 340;
 const ISLAMABAD_REGION: Region = {
   latitude: 33.6844,
   longitude: 73.0479,
-  latitudeDelta: 0.12,
-  longitudeDelta: 0.12,
+  latitudeDelta: 0.015,
+  longitudeDelta: 0.015,
 };
 
 const SEVERITY_PIN_COLORS: Record<Severity, string> = {
@@ -65,6 +66,49 @@ const CRISIS_EMOJI: Record<CrisisType, string> = {
 };
 
 type LayerFilter = 'all' | 'critical' | 'markers' | 'routes';
+
+const getSeverityColor = (severity: string) => {
+  const colors: Record<string, string> = {
+    CRITICAL: '#FF0000',
+    HIGH: '#FF6600',
+    MEDIUM: '#FFD700',
+    LOW: '#00CC00'
+  }
+  return colors[severity.toUpperCase()] || '#FF6600'
+}
+
+
+const getCoords = (location: any): { latitude: number; longitude: number } | null => {
+  if (!location) return null;
+
+  const lat =
+    location?.coordinate?.latitude ??
+    location?.latitude ??
+    location?.lat ??
+    location?.coords?.latitude ??
+    location?.position?.latitude ??
+    null;
+
+  const lng =
+    location?.coordinate?.longitude ??
+    location?.longitude ??
+    location?.lng ??
+    location?.coords?.longitude ??
+    location?.position?.longitude ??
+    null;
+
+  if (lat === null || lat === undefined) return null;
+  if (lng === null || lng === undefined) return null;
+  if (isNaN(Number(lat)) || isNaN(Number(lng))) return null;
+  if (Number(lat) === 0 && Number(lng) === 0) return null;
+
+  return {
+    latitude: Number(lat),
+    longitude: Number(lng)
+  };
+}
+
+
 
 // ═══════════════════════════════════════════════════════════════
 // MapScreen Component
@@ -88,6 +132,23 @@ export default function MapScreen() {
   const pipelineStatus = useCrisisStore((s) => s.pipelineStatus);
   const currentPipeline = useCrisisStore((s) => s.currentPipeline);
   const activeView = useActiveCrisisView();
+  const activeCrises = useCrisisStore((s) => s.activeCrises);
+
+  const sortedCrises = [...activeCrises].sort((a, b) => {
+    const sevMap: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+    return (sevMap[b.severity] || 0) - (sevMap[a.severity] || 0);
+  });
+  const topCrisis = sortedCrises[0];
+
+  const mockView = topCrisis ? {
+    event: topCrisis,
+    typeLabel: topCrisis.detectedType.replace(/_/g, ' ').toUpperCase(),
+    severityLevel: topCrisis.severity,
+    severityScore: topCrisis.severity === 'critical' ? 90 : topCrisis.severity === 'high' ? 70 : topCrisis.severity === 'medium' ? 50 : 30,
+    detectionConfidencePercent: Math.round(topCrisis.confidence * 100),
+    signalCount: topCrisis.signals.length,
+    crisisType: topCrisis.detectedType,
+  } : null;
 
   // Local state
   const [mapReady, setMapReady] = useState(false);
@@ -102,6 +163,27 @@ export default function MapScreen() {
       setMapsStatus(r.ok ? '✓ Geocoding API OK' : `⚠ Geocoding: ${r.message}`);
     });
   }, []);
+
+  useEffect(() => {
+    activeCrises.forEach(crisis => {
+      const coords = getCoords(crisis.location)
+      console.log('Crisis:', crisis.id, 'Coords:', coords, 'Raw location:', crisis.location)
+    })
+  }, [activeCrises]);
+
+  useEffect(() => {
+    if (activeCrises.length > 0 && mapReady) {
+      const coords = getCoords(activeCrises[0].location);
+      if (coords && mapRef.current) {
+        mapRef.current.animateToRegion({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          latitudeDelta: 0.008,
+          longitudeDelta: 0.008,
+        }, 1200);
+      }
+    }
+  }, [activeCrises.length, mapReady]);
 
   // Re-sync map whenever pipeline completes (e.g. ran from Home tab first)
   useEffect(() => {
@@ -164,93 +246,15 @@ export default function MapScreen() {
     mapRef.current?.animateToRegion({
       latitude: marker.coordinate.latitude,
       longitude: marker.coordinate.longitude,
-      latitudeDelta: 0.02,
-      longitudeDelta: 0.02,
+      latitudeDelta: 0.008,
+      longitudeDelta: 0.008,
     }, 500);
     openSheet();
   }, [setSelectedMarker, openSheet]);
 
   // ── Demo mode: inject crisis scenario ─────────────────
 
-  const runDemoScenario = useCallback(async () => {
-    if (demoRunning) return;
-    setDemoRunning(true);
-    clearMap();
 
-    // Inject mock signals one-by-one with delay
-    const demoSignals = ALL_MOCK_SIGNALS.slice(0, 10);
-    const newMarkers: CrisisMarker[] = [];
-
-    for (let i = 0; i < demoSignals.length; i++) {
-      const sig = demoSignals[i];
-      const marker: CrisisMarker = {
-        id: sig.id,
-        coordinate: sig.location.coordinate,
-        type: sig.type,
-        severity: sig.severity,
-        label: sig.location.label ?? sig.location.district ?? 'Unknown',
-      };
-      newMarkers.push(marker);
-      setMarkers([...newMarkers]);
-
-      // Animate to latest marker
-      mapRef.current?.animateToRegion({
-        latitude: sig.location.coordinate.latitude,
-        longitude: sig.location.coordinate.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      }, 400);
-
-      // Wait between markers
-      await new Promise((r) => setTimeout(r, 600));
-    }
-
-    // Add sample routes
-    const sampleRoutes: CrisisRoute[] = [
-      {
-        id: 'ROUTE-BLOCKED-1',
-        coordinates: [
-          { latitude: 33.5935, longitude: 73.0715 },
-          { latitude: 33.5940, longitude: 73.0700 },
-          { latitude: 33.5928, longitude: 73.0720 },
-        ],
-        color: SEVERITY_COLORS.critical.primary,
-        label: 'GT Road — BLOCKED',
-        type: 'blocked',
-      },
-      {
-        id: 'ROUTE-ALT-1',
-        coordinates: [
-          { latitude: 33.6600, longitude: 73.0400 },
-          { latitude: 33.6450, longitude: 73.0600 },
-          { latitude: 33.6300, longitude: 73.0800 },
-        ],
-        color: COLORS.success,
-        label: 'Kashmir Highway (alternate)',
-        type: 'alternate',
-      },
-      {
-        id: 'ROUTE-DISPATCH-1',
-        coordinates: [
-          { latitude: 33.6950, longitude: 73.0400 },
-          { latitude: 33.6880, longitude: 73.0420 },
-          { latitude: 33.7215, longitude: 73.0580 },
-        ],
-        color: COLORS.accent,
-        label: 'Repair team route',
-        type: 'dispatch',
-      },
-    ];
-    setRoutes(sampleRoutes);
-    setRegion({
-      latitude: 33.6844,
-      longitude: 73.0479,
-      latitudeDelta: 0.15,
-      longitudeDelta: 0.15,
-    });
-
-    setDemoRunning(false);
-  }, [demoRunning, clearMap, setMarkers, setRoutes, setRegion]);
 
   // ── Fit camera when markers/routes change (not only count) ──
 
@@ -290,17 +294,23 @@ export default function MapScreen() {
   // RENDER
   // ═════════════════════════════════════════════════════════
 
-  const webMarkers = filteredMarkers.map((m) => ({
-    id: m.id,
-    coordinate: m.coordinate,
-    label: m.label,
-    pinColor: SEVERITY_PIN_COLORS[m.severity],
-    onPress: () => handleMarkerPress(m),
-  }));
+  const webMarkers = activeCrises.map((crisis) => {
+    const coords = getCoords(crisis.location) ?? getCoords(crisis);
+    if (!coords) return null;
+    return {
+      id: crisis.id,
+      coordinate: coords,
+      label: (crisis.detectedType || 'UNKNOWN').replace(/_/g, ' ').toUpperCase(),
+      pinColor: getSeverityColor(crisis.severity),
+      onPress: () => { },
+    };
+  }).filter(Boolean) as any[];
 
-  const webRoutes = showRoutes
+  let webRoutes = showRoutes
     ? routes.map((r) => ({ id: r.id, coordinates: r.coordinates, strokeColor: r.color }))
     : [];
+
+
 
   return (
     <View style={styles.container}>
@@ -328,33 +338,71 @@ export default function MapScreen() {
                 maximumZ={19}
               />
             )}
-            {filteredMarkers.map((m) => (
-              <Marker
-                key={`${m.id}-${m.coordinate.latitude.toFixed(5)}-${m.coordinate.longitude.toFixed(5)}`}
-                identifier={m.id}
-                coordinate={m.coordinate}
-                title={m.label}
-                description={`${m.type.replace(/_/g, ' ').toUpperCase()} — ${m.severity.toUpperCase()}`}
-                pinColor={SEVERITY_PIN_COLORS[m.severity]}
-                onPress={() => handleMarkerPress(m)}
-                tracksViewChanges={false}
-              />
-            ))}
 
-            {showRoutes && routes.map((r) => (
-              <Polyline
-                key={r.id}
-                coordinates={r.coordinates}
-                strokeColor={r.color}
-                strokeWidth={r.type === 'blocked' ? 5 : 3}
-                lineDashPattern={
-                  r.type === 'alternate' ? [10, 6] : r.type === 'dispatch' ? [4, 4] : undefined
-                }
-              />
-            ))}
+
+
+            {/* POWER OUTAGE circle */}
+            {topCrisis?.detectedType === 'power_outage' && (() => {
+              const c = getCoords(topCrisis.location);
+              if (!c) return null;
+              return (
+                <Circle center={c} radius={800}
+                  fillColor="rgba(255,165,0,0.15)"
+                  strokeColor="rgba(255,165,0,0.6)"
+                  strokeWidth={2}
+                />
+              );
+            })()}
+
+            {/* WATER CRISIS circle */}
+            {topCrisis?.detectedType === 'water_crisis' && (() => {
+              const c = getCoords(topCrisis.location);
+              if (!c) return null;
+              return (
+                <Circle center={c} radius={600}
+                  fillColor="rgba(0,100,255,0.15)"
+                  strokeColor="rgba(0,100,255,0.6)"
+                  strokeWidth={2}
+                />
+              );
+            })()}
+
+            {/* FLOOD circle */}
+            {topCrisis?.detectedType === 'flood' && (() => {
+              const c = getCoords(topCrisis.location);
+              if (!c) return null;
+              return (
+                <Circle center={c} radius={500}
+                  fillColor="rgba(0,100,255,0.2)"
+                  strokeColor="rgba(0,100,255,0.6)"
+                  strokeWidth={2}
+                />
+              );
+            })()}
+
+            {/* CRISIS PIN MARKERS — always last so on top */}
+            {activeCrises.map((crisis) => {
+              const coords = getCoords(crisis.location);
+              if (!coords) return null;
+              return (
+                <Marker
+                  key={`crisis-pin-${crisis.id}`}
+                  coordinate={coords}
+                  pinColor={getSeverityColor(crisis.severity)}
+                  title={crisis.detectedType.replace(/_/g, ' ').toUpperCase()}
+                  description={`${crisis.severity.toUpperCase()} · ${Math.round(crisis.confidence * 100)}% confidence`}
+                  onPress={() => {
+                    const storeMarker = markers.find(m => m.id === crisis.id || m.id === `crisis-${crisis.id}`);
+                    if (storeMarker) handleMarkerPress(storeMarker);
+                  }}
+                />
+              );
+            })}
           </>
         )}
       </MapView>
+
+
 
       {/* Loading overlay */}
       {!mapReady && (
@@ -396,9 +444,9 @@ export default function MapScreen() {
         </TouchableOpacity>
       </View>
 
-      {activeView && pipelineStatus === 'complete' && (
+      {mockView && pipelineStatus === 'complete' && (
         <View style={styles.activeBannerWrap}>
-          <ActiveCrisisBanner view={activeView} compact />
+          <ActiveCrisisBanner view={mockView as any} compact />
         </View>
       )}
 
@@ -422,18 +470,7 @@ export default function MapScreen() {
         ))}
       </View>
 
-      {/* Demo inject button */}
-      <TouchableOpacity
-        style={[styles.demoBtn, demoRunning && styles.demoBtnRunning]}
-        onPress={runDemoScenario}
-        disabled={demoRunning}
-      >
-        {demoRunning ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Text style={styles.demoBtnText}>⚡ Inject Crisis Scenario</Text>
-        )}
-      </TouchableOpacity>
+
 
       {/* Stats bar */}
       <View style={styles.statsBar}>
