@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import HomeScreen from './src/screens/HomeScreen';
 import MapScreen from './src/screens/MapScreen';
@@ -32,7 +33,7 @@ const TAB_ICONS: Record<string, { focused: IconName; unfocused: IconName }> = {
 
 export default function App() {
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="light" />
       <NavigationContainer>
         <Tab.Navigator
@@ -44,9 +45,8 @@ export default function App() {
               backgroundColor: COLORS.tabBarBg,
               borderTopColor: COLORS.border,
               borderTopWidth: 1,
-              height: 64,
-              paddingBottom: 8,
-              paddingTop: 6,
+              paddingBottom: 20,
+              height: 70,
             },
             tabBarLabelStyle: {
               fontSize: 10,
@@ -68,6 +68,6 @@ export default function App() {
           <Tab.Screen name="Logs" component={LogsScreen} />
         </Tab.Navigator>
       </NavigationContainer>
-    </>
+    </SafeAreaProvider>
   );
 }
