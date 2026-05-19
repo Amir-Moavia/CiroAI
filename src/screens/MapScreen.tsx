@@ -26,7 +26,6 @@ const Marker = MapModule.Marker;
 const Polyline = MapModule.Polyline;
 const PROVIDER_GOOGLE = MapModule.PROVIDER_GOOGLE;
 const UrlTile = MapModule.UrlTile;
-const Callout = MapModule.Callout;
 import { COLORS, SEVERITY_COLORS, FONT_SIZES, SPACING, RADII } from '../constants/colors';
 import { useMapStore } from '../store/mapStore';
 import { useCrisisStore } from '../store/crisisStore';
@@ -36,6 +35,7 @@ import { ActiveCrisisBanner } from '../components/ActiveCrisisBanner';
 import { CRISIS_TYPE_LABELS } from '../utils/activeCrisisView';
 import { testGoogleMapsApiKey } from '../services/geocodingService';
 import type { MapMarker as CrisisMarker, Severity, CrisisType, RoutePolyline as CrisisRoute } from '../types';
+import { ALL_MOCK_SIGNALS } from '../data/mockSignals';
 
 // ── Constants ───────────────────────────────────────────────
 
@@ -65,16 +65,6 @@ const CRISIS_EMOJI: Record<CrisisType, string> = {
 };
 
 type LayerFilter = 'all' | 'critical' | 'markers' | 'routes';
-
-const getSeverityColor = (severity: string) => {
-  const colors: Record<string, string> = {
-    CRITICAL: '#FF0000',
-    HIGH: '#FF6600', 
-    MEDIUM: '#FFD700',
-    LOW: '#00CC00'
-  }
-  return colors[severity.toUpperCase()] || '#FF6600'
-}
 
 // ═══════════════════════════════════════════════════════════════
 // MapScreen Component
@@ -182,7 +172,85 @@ export default function MapScreen() {
 
   // ── Demo mode: inject crisis scenario ─────────────────
 
+  const runDemoScenario = useCallback(async () => {
+    if (demoRunning) return;
+    setDemoRunning(true);
+    clearMap();
 
+    // Inject mock signals one-by-one with delay
+    const demoSignals = ALL_MOCK_SIGNALS.slice(0, 10);
+    const newMarkers: CrisisMarker[] = [];
+
+    for (let i = 0; i < demoSignals.length; i++) {
+      const sig = demoSignals[i];
+      const marker: CrisisMarker = {
+        id: sig.id,
+        coordinate: sig.location.coordinate,
+        type: sig.type,
+        severity: sig.severity,
+        label: sig.location.label ?? sig.location.district ?? 'Unknown',
+      };
+      newMarkers.push(marker);
+      setMarkers([...newMarkers]);
+
+      // Animate to latest marker
+      mapRef.current?.animateToRegion({
+        latitude: sig.location.coordinate.latitude,
+        longitude: sig.location.coordinate.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      }, 400);
+
+      // Wait between markers
+      await new Promise((r) => setTimeout(r, 600));
+    }
+
+    // Add sample routes
+    const sampleRoutes: CrisisRoute[] = [
+      {
+        id: 'ROUTE-BLOCKED-1',
+        coordinates: [
+          { latitude: 33.5935, longitude: 73.0715 },
+          { latitude: 33.5940, longitude: 73.0700 },
+          { latitude: 33.5928, longitude: 73.0720 },
+        ],
+        color: SEVERITY_COLORS.critical.primary,
+        label: 'GT Road — BLOCKED',
+        type: 'blocked',
+      },
+      {
+        id: 'ROUTE-ALT-1',
+        coordinates: [
+          { latitude: 33.6600, longitude: 73.0400 },
+          { latitude: 33.6450, longitude: 73.0600 },
+          { latitude: 33.6300, longitude: 73.0800 },
+        ],
+        color: COLORS.success,
+        label: 'Kashmir Highway (alternate)',
+        type: 'alternate',
+      },
+      {
+        id: 'ROUTE-DISPATCH-1',
+        coordinates: [
+          { latitude: 33.6950, longitude: 73.0400 },
+          { latitude: 33.6880, longitude: 73.0420 },
+          { latitude: 33.7215, longitude: 73.0580 },
+        ],
+        color: COLORS.accent,
+        label: 'Repair team route',
+        type: 'dispatch',
+      },
+    ];
+    setRoutes(sampleRoutes);
+    setRegion({
+      latitude: 33.6844,
+      longitude: 73.0479,
+      latitudeDelta: 0.15,
+      longitudeDelta: 0.15,
+    });
+
+    setDemoRunning(false);
+  }, [demoRunning, clearMap, setMarkers, setRoutes, setRegion]);
 
   // ── Fit camera when markers/routes change (not only count) ──
 
@@ -260,31 +328,18 @@ export default function MapScreen() {
                 maximumZ={19}
               />
             )}
-            {filteredMarkers.map((m) => {
-              if (!m.coordinate.latitude || !m.coordinate.longitude) return null;
-              
-              const confidence = (m as any).confidence ?? 100;
-              
-              return (
-                <Marker
-                  key={m.id}
-                  coordinate={{
-                    latitude: Number(m.coordinate.latitude),
-                    longitude: Number(m.coordinate.longitude)
-                  }}
-                  onPress={() => handleMarkerPress(m)}
-                  pinColor={getSeverityColor(m.severity)}
-                >
-                  <Callout>
-                    <View style={{ padding: 10, minWidth: 150 }}>
-                      <Text style={{ fontWeight: 'bold', color: '#000' }}>{m.label}</Text>
-                      <Text style={{ color: '#000' }}>Severity: {m.severity.toUpperCase()}</Text>
-                      <Text style={{ color: '#000' }}>Confidence: {confidence}%</Text>
-                    </View>
-                  </Callout>
-                </Marker>
-              );
-            })}
+            {filteredMarkers.map((m) => (
+              <Marker
+                key={`${m.id}-${m.coordinate.latitude.toFixed(5)}-${m.coordinate.longitude.toFixed(5)}`}
+                identifier={m.id}
+                coordinate={m.coordinate}
+                title={m.label}
+                description={`${m.type.replace(/_/g, ' ').toUpperCase()} — ${m.severity.toUpperCase()}`}
+                pinColor={SEVERITY_PIN_COLORS[m.severity]}
+                onPress={() => handleMarkerPress(m)}
+                tracksViewChanges={false}
+              />
+            ))}
 
             {showRoutes && routes.map((r) => (
               <Polyline
@@ -367,7 +422,18 @@ export default function MapScreen() {
         ))}
       </View>
 
-
+      {/* Demo inject button */}
+      <TouchableOpacity
+        style={[styles.demoBtn, demoRunning && styles.demoBtnRunning]}
+        onPress={runDemoScenario}
+        disabled={demoRunning}
+      >
+        {demoRunning ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.demoBtnText}>⚡ Inject Crisis Scenario</Text>
+        )}
+      </TouchableOpacity>
 
       {/* Stats bar */}
       <View style={styles.statsBar}>

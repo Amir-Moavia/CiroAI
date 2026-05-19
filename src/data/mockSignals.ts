@@ -598,34 +598,3 @@ export function getSignalsInWindow(startOffset: number, endOffset: number): Cris
     return t >= start && t <= end;
   });
 }
-
-/** Generate fresh signals for dynamic demo */
-export function generateFreshSignals(): CrisisSignal[] {
-  const count = Math.floor(Math.random() * 4) + 5; // 5 to 8
-  const shuffled = [...ALL_MOCK_SIGNALS].sort(() => 0.5 - Math.random());
-  const selected = shuffled.slice(0, count);
-  
-  const severities: Array<'low' | 'medium' | 'high' | 'critical'> = ['low', 'medium', 'high', 'critical'];
-  
-  return selected.map((sig) => {
-    // Randomize timestamp to current time +/- some minutes
-    const date = new Date();
-    date.setMinutes(date.getMinutes() - Math.floor(Math.random() * 60)); // within last hour
-    
-    // Randomize severity slightly
-    let sevIdx = severities.indexOf(sig.severity as any);
-    if (sevIdx >= 0) {
-      const rand = Math.random();
-      if (rand < 0.2 && sevIdx > 0) sevIdx--; // 20% chance to decrease
-      else if (rand > 0.8 && sevIdx < 3) sevIdx++; // 20% chance to increase
-    }
-    const newSeverity = severities[sevIdx] ?? sig.severity;
-    
-    return {
-      ...sig,
-      id: `${sig.id}-${Math.random().toString(36).substring(2, 7)}`, // unique ID
-      timestamp: date.toISOString(),
-      severity: newSeverity,
-    };
-  });
-}

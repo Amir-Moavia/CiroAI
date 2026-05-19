@@ -147,7 +147,6 @@ export const useCrisisStore = create<CrisisState>((set) => ({
       pipelineStatus: 'running',
       currentPipeline: null,
       liveAgentSteps: INITIAL_LIVE_STEPS.map((s) => ({ ...s })),
-      activeCrises: [],
     });
     set((s) => ({ systemLogs: [...s.systemLogs, makeLog(`Pipeline started. Processing ${inputs.length} inputs...`)] }));
 
@@ -162,7 +161,7 @@ export const useCrisisStore = create<CrisisState>((set) => ({
         const result = response.data;
         const newCrises: CrisisEvent[] = [];
         if (result.crisisEvent) {
-          newCrises.push({ ...result.crisisEvent, createdAt: new Date().toISOString() });
+          newCrises.push(result.crisisEvent);
         }
         const simLogs = result.simulation?.logs ?? [];
 
@@ -217,7 +216,7 @@ export const useCrisisStore = create<CrisisState>((set) => ({
         // Extract crises
         const newCrises: CrisisEvent[] = [];
         if (result.crisisEvent) {
-          newCrises.push({ ...result.crisisEvent, createdAt: new Date().toISOString() });
+          newCrises.push(result.crisisEvent);
         }
 
         // Extract simulation logs

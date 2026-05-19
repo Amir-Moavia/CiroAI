@@ -12,7 +12,6 @@ import type {
   RoutePolyline,
   Severity,
   LogEntry,
-  CrisisEvent,
 } from '../types';
 
 // ── Default map region: Islamabad centre ────────────────────
@@ -45,7 +44,6 @@ interface MapState {
   setSelectedMarker: (marker: MapMarker | null) => void;
   focusOnCrisis: (crisisId: string) => void;
   clearMap: () => void;
-  syncWithCrisis: (crisisEvents: CrisisEvent[]) => void;
 }
 
 // ── Helper ──────────────────────────────────────────────────
@@ -153,31 +151,5 @@ export const useMapStore = create<MapState>((set, get) => ({
       selectedMarker: null,
       sideEffectLog: [makeLog('Map cleared')],
     });
-  },
-
-  syncWithCrisis: (crisisEvents) => {
-    const markers: MapMarker[] = crisisEvents.map((event) => ({
-      id: event.id,
-      coordinate: event.location.coordinate,
-      type: event.detectedType,
-      severity: event.severity,
-      label: event.location.label ?? event.location.city ?? 'Crisis Location',
-    }));
-    
-    set({
-      markers,
-      sideEffectLog: [...get().sideEffectLog, makeLog(`${markers.length} markers synced from crisis events`)],
-    });
-
-    if (markers.length > 0) {
-      set({
-        region: {
-          latitude: markers[0].coordinate.latitude,
-          longitude: markers[0].coordinate.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        },
-      });
-    }
   },
 }));
