@@ -97,6 +97,14 @@ export default function HomeScreen() {
     checkMapsApi();
   }, [checkMapsApi]);
 
+  // Force re-render when pipeline completes
+  const [, setForcedRender] = useState(0);
+  useEffect(() => {
+    if (pipelineStatus === 'complete') {
+      setForcedRender((v) => v + 1);
+    }
+  }, [pipelineStatus]);
+
   // ── Handlers ──────────────────────────────────────────
 
   const buildInputsWithFeeds = useCallback(async (texts: string[]) => {

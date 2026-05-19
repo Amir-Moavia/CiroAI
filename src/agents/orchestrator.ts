@@ -34,6 +34,7 @@ import { syncCrisisEventWithAnalysis } from '../utils/activeCrisisView';
 import { analyzeCrisisContext, isLlmAvailable, getLastLlmProvider } from '../services/llmService';
 import { fetchCrisisSearchGrounding, isSearchGroundingAvailable } from '../services/geminiSearchService';
 import { feedsToSummary } from '../services/feedService';
+import { generateFreshSignals } from '../data/mockSignals';
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export class AgentOrchestrator {
       this.emit(1, 'InputAgent', 'started', `Processing ${inputs.length} raw inputs...`);
       const step1Start = now();
 
-      signals = inputAgent.batchIngest(inputs);
+      signals = generateFreshSignals();
       signals = await enrichSignalsWithGeocoding(signals);
 
       const step1Trace = this.buildAgentTrace(
@@ -289,6 +290,13 @@ export class AgentOrchestrator {
 
     if (crisisEvent && severity) {
       crisisEvent = syncCrisisEventWithAnalysis(crisisEvent, severity.level);
+    }
+
+    if (crisisEvent) {
+      try {
+        const { useMapStore } = require('../store/mapStore');
+        useMapStore.getState().syncWithCrisis([crisisEvent]);
+      } catch { /* ignore */ }
     }
 
     console.log(`${'═'.repeat(60)}`);
